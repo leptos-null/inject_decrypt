@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Theos
+obj/
+.theos/
+
+# Xcode
+xcuserdata/
+xcshareddata/
+build
+
+# VSCode
+.vscode/
