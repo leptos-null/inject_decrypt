@@ -12,10 +12,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <libgen.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
+#include <limits.h>
 #include <copyfile.h>
 #include <stdbool.h>
 #include <sys/stat.h>
@@ -27,16 +27,14 @@
 
 static const char __used
 _whatMsg[] = "@(#) inject_decrypt: decrypt Mach-O executables using injection",
-_whatUsg[] = "@(#) Usage: DYLD_INSERT_LIBRARIES=inject_decrypt.dylib <executable> [-avvv] <out_path>";
+_whatUsg[] = "@(#) Usage: DYLD_INSERT_LIBRARIES=inject_decrypt.dylib <executable>";
 
 __attribute__((constructor, noreturn))
 static void dump(int argc, char *argv[]) {
-    const char *__restrict usageMessageFormat =
-    "Usage: DYLD_INSERT_LIBRARIES=inject_decrypt.dylib %s [-avvv] <out_path>\n"
+    const char *usageMessage =
+    "Usage: DYLD_INSERT_LIBRARIES=inject_decrypt.dylib <executable> [-avvv] <out_path>\n"
     "  -a    all images (out_path should be a non-existant directory)\n"
     "  -v    verbose mode, multiple increases verbosity";
-    char usageMessage[strlen(usageMessageFormat) - 2 + strlen(argv[0]) + 1]; /* %s is -2, null term is +1 */
-    snprintf(usageMessage, sizeof(usageMessage), usageMessageFormat, argv[0]);
     
     if (argc < 2) {
         puts(usageMessage);
@@ -79,6 +77,18 @@ static void dump(int argc, char *argv[]) {
         }
     }
     
+    char realPathBuff[PATH_MAX];
+    
+    const char *mainExecPath = _dyld_get_image_name(0);
+    if (realpath(mainExecPath, realPathBuff) == NULL) {
+        printf("Could not resolve the real path of %s\n", mainExecPath);
+        exit(EXIT_FAILURE);
+    }
+    size_t const treePathLen = strrchr(realPathBuff, '/') + 1 - realPathBuff;
+    char treePath[treePathLen + 1];
+    strlcpy(treePath, realPathBuff, sizeof(treePath));
+    VerboseLog(2, "Using %s as tree root\n", treePath);
+    
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         const struct mach_header *mh = _dyld_get_image_header(i);
         
@@ -93,8 +103,7 @@ static void dump(int argc, char *argv[]) {
         }
         
         const char *readPath = _dyld_get_image_name(i);
-        struct stat statInfo;
-        if (stat(readPath, &statInfo) != 0) {
+        if (access(readPath, F_OK)) {
             if (errno == ENOENT) {
                 errno = 0;
                 VerboseLog(3, "%s doesn't exist on disk, skipping\n", readPath);
@@ -104,6 +113,14 @@ static void dump(int argc, char *argv[]) {
                 exit(EXIT_FAILURE);
             }
         }
+        if (realpath(readPath, realPathBuff) == NULL) {
+            printf("Could not resolve the real path of %s\n", readPath);
+            exit(EXIT_FAILURE);
+        }
+        if (strncmp(realPathBuff, treePath, treePathLen)) {
+            VerboseLog(3, "Skipping %s, not in tree\n", readPath);
+            continue;
+        }
         VerboseLog(1, "Decrypting %s\n", readPath);
         
         int read_fd = open(readPath, O_RDONLY);
@@ -112,15 +129,14 @@ static void dump(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
         
-        const char *imageBase = basename((char *)readPath);
+        const char *imageBase = strrchr(readPath, '/') + 1;
         char writePath[strlen(outPath) + 1 + strlen(imageBase) + 1];
-        strcpy(writePath, outPath);
+        *writePath = 0;
+        strlcat(writePath, outPath, sizeof(writePath));
         
         if (wantsFrameworks) {
-            writePath[strlen(outPath)] = '/';
-            strcpy(writePath + strlen(outPath) + 1, imageBase);
-        } else {
-            writePath[strlen(outPath)] = 0;
+            strlcat(writePath, "/", sizeof(writePath));
+            strlcat(writePath, imageBase, sizeof(writePath));
         }
         VerboseLog(2, "Output file is %s\n", writePath);
         
