@@ -26,8 +26,9 @@
 #define VerboseLog(_lvl, ...) if (verboseLevel >= _lvl) printf(__VA_ARGS__)
 
 static const char __used
-_whatMsg[] = "@(#) inject_decrypt: decrypt Mach-O executables using injection",
-_whatUsg[] = "@(#) Usage: DYLD_INSERT_LIBRARIES=inject_decrypt.dylib <executable>";
+_whatMsg[] = "@(#) inject_decrypt: Decrypt Mach-O executables using injection",
+_whatSrc[] = "@(#) https://github.com/leptos-null/inject_decrypt " __FILE__ "",
+_whatUsg[] = "@(#) Usage: DYLD_INSERT_LIBRARIES=inject_decrypt.dylib executable";
 
 __attribute__((constructor, noreturn))
 static void dump(int argc, char *argv[]) {
